@@ -80,3 +80,34 @@
 ### 待處理
 
 - 瀏覽器畫面由使用者目視確認（開發環境沒有瀏覽器可截圖）。
+
+---
+
+## 2026-10-29 — 階段 2（Spatial + UMAP 雙視圖）
+
+### 完成事項
+
+- 加入 deck.gl 9.1.15（`@deck.gl/core`、`layers`、`react`、`widgets`）。
+- `ScatterView`：`OrthographicView` + `ScatterplotLayer`，座標與顏色以二進位 attribute 直接傳給 GPU；自動縮放到資料範圍，提供「Reset view」。
+- 著色：預設使用自動偵測的 cell type 欄位，側欄下拉選單可改選任何 `obs` 欄位；類別欄位用 `.h5ad` 中的 `uns["{col}_colors"]`，沒有時用 scanpy 預設 20 色，超過 20 類用黃金角色相產生；數值欄位用 viridis 色條。
+- 未註釋細胞（code `-1`）與數值缺值固定為灰色；圖例列出「Unannotated」與細胞數。
+- 圖例可點選個別類別顯示／隱藏，並有 Show all / Hide all。
+- 後端效能：類別欄位改為「每個類別標籤判斷一次再重新對應 code」，749,950 細胞時第一次讀取 `cell_type` 從 0.77 秒降到 0.04 秒；同時移除沒有任何細胞的類別，避免圖例出現 0 筆的項目。新增 2 個測試，共 16 個測試通過。
+- 以 749,950 細胞的合成資料（`python -m sde demo --n-cells 750000`）測試：經 Vite proxy 取得 spatial / UMAP 座標（各 6 MB）、類別 code、單一基因表現量，每個請求都在 0.05 秒內完成。
+
+### 決策
+
+| 決策 | 理由 |
+|---|---|
+| deck.gl 固定 9.1.15，並明確安裝 `@deck.gl/widgets@9.1.15` | `@deck.gl/react@9.1` 的 peer dependency 會拉到 widgets 9.4，與 core 9.1 衝突；全部固定同一版本 |
+| 位置在前端補成 3 維（z = 0）再交給 deck.gl | deck.gl 的 shader 使用 3 維位置；每個 embedding 只轉換一次，750k 細胞約多 9 MB，可接受 |
+| Spatial 視圖 y 軸朝下（`flipY`），UMAP y 軸朝上 | 組織座標是影像座標系（與 notebook 中 `invert_yaxis()` 一致）；UMAP 依一般數學座標 |
+| Spatial 點半徑以微米計（5 µm），UMAP 點半徑以像素計（1.5 px），最小 0.6 px | Spatial 放大時點的大小接近真實細胞；UMAP 沒有物理尺度 |
+| 隱藏類別用 alpha = 0，而不是重新篩選資料 | 只要重算顏色 buffer，位置 buffer 不變，切換即時 |
+| 暫不處理 bundle 大小警告（約 880 kB） | 本地執行，不經網路下載；之後如需要再做 code splitting |
+| 不在 deck.gl 開啟 picking | 階段 2 不需要滑鼠點選細胞；picking 會讓 GPU 多畫一次，留到需要時再開 |
+
+### 待處理
+
+- **畫面尚未目視確認**：需要使用者在瀏覽器開 http://localhost:5173 確認兩個視圖、著色、圖例與 750k 細胞縮放是否流暢（PLAN.md 階段 2 的完成標準）。
+- 下一步：階段 3（Xenium 細胞多邊形）。

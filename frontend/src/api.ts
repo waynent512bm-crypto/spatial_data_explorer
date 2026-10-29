@@ -18,6 +18,27 @@ export interface DatasetSummary {
   has_polygons: boolean;
 }
 
+export interface CategoricalMeta {
+  name: string;
+  kind: "categorical";
+  categories: string[];
+  colors: (string | null)[] | null;
+  unannotated_count: number;
+}
+
+export interface NumericMeta {
+  name: string;
+  kind: "numeric";
+  min: number | null;
+  max: number | null;
+}
+
+export type ObsMeta = CategoricalMeta | NumericMeta;
+
+export type ObsColumnData =
+  | { meta: CategoricalMeta; codes: Int32Array }
+  | { meta: NumericMeta; values: Float32Array };
+
 export async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
@@ -42,7 +63,22 @@ export async function getArray(path: string): Promise<{ data: TypedArray; shape:
   return { data: new Ctor(await res.arrayBuffer()), shape };
 }
 
+const enc = encodeURIComponent;
+
 export const api = {
   health: () => getJson<{ status: string; version: string }>("/api/health"),
   dataset: () => getJson<DatasetSummary>("/api/dataset"),
+
+  /** n x 2 coordinates, as a flat Float32Array [x0, y0, x1, y1, ...]. */
+  embedding: async (name: string) => (await getArray(`/api/embedding/${enc(name)}`)).data as Float32Array,
+
+  obsColumn: async (column: string): Promise<ObsColumnData> => {
+    const [meta, values] = await Promise.all([
+      getJson<ObsMeta>(`/api/obs/${enc(column)}`),
+      getArray(`/api/obs/${enc(column)}/values`),
+    ]);
+    return meta.kind === "categorical"
+      ? { meta, codes: values.data as Int32Array }
+      : { meta, values: values.data as Float32Array };
+  },
 };

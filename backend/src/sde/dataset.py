@@ -95,19 +95,17 @@ class Dataset:
         s = self.adata.obs[name]
 
         if is_categorical_like(s):
-            unannotated = is_unannotated(s)
-            labels = s.astype("string")
-            kept = labels[~unannotated]
-            if isinstance(s.dtype, pd.CategoricalDtype):
-                # Preserve the annotation's own category order.
-                order = [str(c) for c in s.cat.categories]
-                present = set(kept.unique())
-                categories = [c for c in order if c in present]
-            else:
-                categories = sorted(kept.unique())
-            lookup = {c: i for i, c in enumerate(categories)}
-            codes = np.full(len(s), -1, dtype=np.int32)
-            codes[~unannotated] = kept.map(lookup).to_numpy(dtype=np.int32)
+            # Classify each distinct label once, then remap integer codes: fast for ~1M cells.
+            # Category order follows the annotation's own Categorical order (else sorted).
+            cat = s if isinstance(s.dtype, pd.CategoricalDtype) else s.astype("category")
+            labels = pd.Series(cat.cat.categories)
+            old = cat.cat.codes.to_numpy()
+            used = np.bincount(old[old >= 0], minlength=len(labels)) > 0
+            keep = used & ~is_unannotated(labels)
+            categories = [str(c) for c in labels[keep]]
+            remap = np.full(len(labels), -1, dtype=np.int32)
+            remap[keep] = np.arange(keep.sum(), dtype=np.int32)
+            codes = np.where(old >= 0, remap[np.maximum(old, 0)], -1).astype(np.int32)
             col = ObsColumn(name, "categorical", categories=categories, codes=codes)
         elif pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s):
             col = ObsColumn(name, "numeric", values=s.to_numpy(dtype=np.float32, na_value=np.nan))
