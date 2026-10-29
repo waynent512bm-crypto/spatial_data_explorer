@@ -21,7 +21,7 @@
 1. **`.h5ad`（必要）**：已 cluster、已 annotate 的 AnnData，需含：
    - `obsm["spatial"]`：細胞中心點座標（微米）
    - `obsm["X_umap"]`：UMAP 座標
-   - `obs` 中的 cluster / cell type 欄位（例如 `leiden`、`cell_type`）
+   - `obs` 中已有的 cluster / cell type 欄位（**不需要另外新增或改名**，程式會自動偵測，見下方「Cell type 欄位自動偵測」）
    - 表現矩陣：log-normalized 值（`X` 或某個 `layers`，啟動時指定）
 2. **細胞邊界檔（建議）**：用來畫多邊形。
 
@@ -31,9 +31,29 @@
 | Vizgen MERSCOPE | `cell_boundaries.parquet`（較新版本） | 每列一個細胞：`EntityID`, `ZIndex`, `Geometry`（WKB 多邊形） | 微米（待用實際檔案確認） |
 | NanoString CosMx | `*-polygons.csv` | 每列一個頂點：`fov`, `cellID`, `x_global_px`, `y_global_px` | 像素，需乘上 pixel size 換算成微米（待確認各版本數值） |
 
+### Cell type 欄位自動偵測
+
+使用者不需要把 annotation 欄位改成固定名稱，程式啟動時從 `obs` 自動挑出最可能的 cell type 欄位作為預設著色：
+
+1. 候選欄位：類別型（`category` / 字串）且類別數介於 2 到 200 之間的欄位。
+2. 依欄位名稱評分（不分大小寫，底線、空白、連字號視為相同），優先順序：
+   - 名稱含 `cell_type`、`celltype`、`cell_annotation`、`annotation`、`cell_label`、`predicted_label`、`majority_voting` 等
+   - 名稱含 `type`、`label`、`annot`、`class`
+   - cluster 欄位：`leiden`、`louvain`、`cluster`、`seurat_clusters`
+3. 同分時，偏好類別名稱是文字（例如 `T cell`）而非純數字（例如 `0`、`1`）的欄位，因為純數字通常是未命名的 cluster。
+4. 偵測結果在介面上顯示（例如「著色依據：`cell_type`（自動偵測）」），使用者可從下拉選單改選任何其他 `obs` 欄位。
+5. 都找不到時，退回第一個類別型欄位；連類別型欄位都沒有時，以單一顏色顯示並提示。
+
+### 未註釋細胞
+
+以下細胞一律以**灰色**顯示，並在圖例中列為「Unannotated」：
+
+- cell type 值為缺值（`NaN`），或為 `Unassigned`、`Unknown`、`Unannotated`、`NA`、`none`、空字串等（不分大小寫）
+- 出現在細胞邊界檔、但不在 `.h5ad` 中的細胞（例如 QC 時被過濾掉的細胞）：畫成灰色多邊形保持組織外觀完整，但沒有表現量資料，不能被圈選，也不會進入 DE
+
 ### 需要處理的細節
 
-- **細胞 ID 對應**：多邊形檔的細胞 ID 必須能對到 `.h5ad` 的 `obs_names`。各平台 ID 格式不同（例如 CosMx 需組合 `fov` + `cellID`），由各平台的 reader 負責轉換；對不上的細胞要在啟動時回報數量。
+- **細胞 ID 對應**：多邊形檔的細胞 ID 必須能對到 `.h5ad` 的 `obs_names`。各平台 ID 格式不同（例如 CosMx 需組合 `fov` + `cellID`），由各平台的 reader 負責轉換；對不上的細胞要在啟動時回報數量（只在邊界檔中的細胞依「未註釋細胞」規則顯示為灰色；只在 `.h5ad` 中、沒有多邊形的細胞以中心點畫出）。
 - **座標系一致**：多邊形與 `obsm["spatial"]` 必須在同一座標系，否則多邊形會和中心點錯位。啟動時抽樣檢查中心點是否落在對應多邊形內。
 - **MERSCOPE 多 z 層**：每個細胞在不同 `ZIndex` 各有一個多邊形，MVP 只取單一 z 層（預設中間層）。
 - **沒有邊界檔時**：退回以中心點畫圓點，其他功能照常運作（例如舊的 MERFISH 匯出資料只有兩個 CSV，沒有邊界檔）。
@@ -49,13 +69,13 @@
 | Lasso 圈選 | 滑鼠自由畫圈選取細胞（以中心點判斷是否在圈內）；可存成多個群組（Group A、Group B…），可命名、刪除 |
 | DE 分析 | Group A vs. Group B，或 Group A vs. 其餘所有細胞；結果以表格（gene、logFC、p-adj）與 volcano plot 呈現 |
 | 基因選取 | 搜尋框（自動完成）選基因；點 DE 表格中的基因即可依該基因上色 |
-| 圖例 | 類別欄位可點選顯示／隱藏個別類別；數值欄位顯示色條 |
+| 圖例 | 類別欄位可點選顯示／隱藏個別類別；未註釋細胞固定為灰色；數值欄位顯示色條 |
 
 ### 不在 MVP 範圍內（之後再做）
 
 - 多樣本切換與比較
 - 組織影像底圖（DAPI / H&E）、轉錄本（transcript）點位
-- 蛋白質等第二模態的專屬檢視（例如 Xenium protein panel）
+- 蛋白質等第二模態的專屬檢視與 DE（例如 Xenium protein panel；蛋白質的正規化方式之後再決定）
 - Dot plot / violin plot、多基因同時檢視
 - 匯出圈選結果與 DE 結果
 - 網頁直接上傳檔案（MVP 由啟動時指定檔案路徑）
@@ -78,7 +98,7 @@
 - 把圈選的群組寫成暫時的 `obs` 類別欄位（`A` / `B` / `rest`），對該欄位跑 `rank_genes_groups(groups=["A"], reference="B" 或 "rest")`，結果用 `sc.get.rank_genes_groups_df` 取出。
 - 只對被選到的細胞子集計算，避免每次複製整個 AnnData。
 - 群組細胞數太少（例如 < 10）時，提示結果不可靠。
-- 注意：這是 cell-level 的檢定，每個細胞都被當成獨立樣本，p 值會偏小，適合探索，不適合當作最終的統計結論。
+- **p 值膨脹警語（必須保留）**：這是 cell-level 的檢定，每個細胞都被當成獨立樣本，但同一組織、同一樣本的細胞彼此並不獨立，因此 p 值會嚴重偏小（膨脹）。結果適合探索與挑選候選基因，不適合當作最終的統計結論。此警語要**常駐顯示在 DE 結果面板上**，不能只寫在文件中。
 
 ## 5. 架構
 
@@ -134,14 +154,14 @@
 |---|---|---|
 | 0. 專案骨架 | 建立 `frontend/`、`backend/` 結構、`.gitignore`（資料檔、`.h5ad`、`.parquet`、快取不進 git）、一行指令啟動 | 開啟網頁顯示「已連線到後端」 |
 | 1. 資料 API | 讀取 `.h5ad`，提供 metadata、座標、基因表現 | API 回傳正確的細胞數、基因清單與 `obs` 欄位 |
-| 2. 雙視圖（點） | Spatial + UMAP 散佈圖，依 cell type 上色 | 測試資料縮放流暢，著色與 notebook 圖一致 |
+| 2. 雙視圖（點） | Spatial + UMAP 散佈圖，依自動偵測的 cell type 欄位上色，未註釋細胞為灰色 | 自動選中測試資料的 annotation 欄位；縮放流暢，著色與 notebook 圖一致 |
 | 3. 細胞多邊形 | Xenium reader + 多邊形快取 + spatial 視圖畫多邊形，縮小時改畫中心點 | 放大後看得到每個細胞的形狀且依 cell type 著色；中心點都落在多邊形內 |
 | 4. 基因上色 | 搜尋基因、依表現量為多邊形與 UMAP 點上色、顯示色條 | 選擇已知 marker 基因時，對應 cell type 的區域亮起 |
 | 5. Lasso 圈選 | 雙視圖連動選取、群組管理 | 在 UMAP 圈一群，spatial 圖同步標示同一批細胞 |
-| 6. DE 分析 | A vs. B / A vs. rest、表格 + volcano plot、點基因上色 | 結果與直接在 notebook 跑 `rank_genes_groups` 一致 |
-| 7. 其他平台 | MERSCOPE、CosMx 的細胞邊界 reader | 各用一份實際資料確認多邊形與中心點對齊 |
+| 6. DE 分析 | A vs. B / A vs. rest、表格 + volcano plot、點基因上色、p 值膨脹警語 | 結果與直接在 notebook 跑 `rank_genes_groups` 一致；警語常駐顯示 |
+| 7. 其他平台 | MERSCOPE、CosMx 的細胞邊界 reader | 各用一份實際資料確認多邊形與中心點對齊（需等測試資料補上） |
 
-階段 0–7 完成即為 MVP。先以 Xenium 完成整條流程，再補其他平台的 reader。
+階段 0–7 完成即為 MVP。先以 Xenium 完成整條流程，再補其他平台的 reader；階段 7 要等 MERSCOPE、CosMx 測試資料到位才能開始。
 
 ## 8. 測試資料
 
@@ -153,19 +173,21 @@
 
 開始實作前要先確認的事：
 
-- `obs` 中 cell type 欄位的實際名稱
+- 自動偵測是否選中正確的 annotation 欄位，以及其中用來表示未註釋的值（例如 `Unassigned`）是否在灰色規則內
 - 表現量在 `X` 還是某個 `layers`，是否已 log-normalize
 - `obs_names` 是否就是 Xenium 的 `cell_id`（可直接對到 `cell_boundaries.parquet`）
 - 是否經過 QC 過濾（多邊形檔中會有 `.h5ad` 沒有的細胞，需略過）
 - 這份資料含 protein panel，確認蛋白質是放在另一個 AnnData、`obsm` 還是與基因混在 `var` 中，避免被當成基因做 DE
 
-**其他測試資料**
+**其他測試資料（後續補上）**
 
-- MERSCOPE：之後找一份含 `cell_boundaries.parquet` 的資料（現有的 MERFISH 子宮癌資料沒有邊界檔，只能測試「沒有邊界檔時退回畫點」）
-- CosMx：之後找一份含 `*-polygons.csv` 的資料
+- MERSCOPE：待補一份含 `cell_boundaries.parquet` 的已 annotate 資料（現有的 MERFISH 子宮癌資料沒有邊界檔，只能測試「沒有邊界檔時退回畫點」）
+- CosMx：待補一份含 `*-polygons.csv` 的已 annotate 資料
 
 ## 9. 待確認事項
 
 - 「Nanaotream」是否指 NanoString CosMx（本文件暫以 CosMx 規劃）
 - 是否會載入全轉錄體（2 萬以上基因）或數百萬細胞的資料
 - DE 是否需要 t-test 等較快的方法作為選項
+- 蛋白質資料的正規化方式（例如 arcsinh、CLR）
+- MERSCOPE、CosMx 測試資料的來源
