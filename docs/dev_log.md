@@ -136,3 +136,58 @@
 | 腳本自行修正 PATH，而不是只請使用者重開 VS Code | 安裝新工具後忘記重開是常見情況，腳本自己處理比較不容易卡住 |
 | port 被占用時直接報錯 | 自動換 port 會讓前端連到錯的後端，比啟動失敗更難察覺 |
 | 在 README 的指令改用 `powershell -ExecutionPolicy Bypass -File` | 預設執行原則會擋下 `.ps1`；Bypass 只作用於這一次執行，不改系統設定 |
+
+---
+
+## 2026-10-29 — 實際測試資料檢查（PLAN.md §8）+ 依結果調整資料載入
+
+### 找到的資料
+
+在這台電腦的 `C:\Users\User\Downloads\Xenium_合併分析\` 找到 PLAN.md 指定的測試資料（不需要外接 SSD）：
+
+- `analysis_out\xenium_rcc_annotated.h5ad`（54 MB）
+- `Xenium_V1_Human_Kidney_FFPE_Protein_updated_outs\cell_boundaries.parquet`（39 MB）
+- 同資料夾另有 `rna_processed.h5ad`、`protein_processed.h5ad`、`adata_qc.h5ad`
+
+### 檢查結果
+
+| 項目 | 結果 |
+|---|---|
+| Cell type 欄位 | **沒有已命名的 cell type**。類別欄位只有 `rna_leiden`（18 類）、`prot_leiden`（18 類）、`domain`（8 類）、`tumor_zone`（6 類），以及 `CD8A_pos`、`is_tumor` 等布林 gate 欄位。自動偵測選中 `rna_leiden` |
+| 表現量 | `X` 是**原始 counts**（整數，最大 4,329），不是 log-normalized；`layers` 只有 `raw` |
+| `obs_names` 對 `cell_id` | 一致（例如 `eicdcobf-1`）；50,000 個細胞全部在 `cell_boundaries.parquet` 中 |
+| QC 過濾 / 子抽樣 | `.h5ad` 只有 50,000 個細胞，邊界檔有 465,534 個；415,534 個（89%）只在邊界檔中 |
+| 蛋白質 | 與基因混在 `var` 中：543 個 feature = 405 基因 + 27 蛋白質（`p_` 開頭）+ 111 個 control probe / codeword，以 `var["feature_types"]` 區分 |
+| 座標對齊 | `obsm["spatial"]` 與多邊形頂點平均位置的距離：中位數 0.59 µm、99 百分位 2.52 µm，對齊良好 |
+| UMAP | 名稱是 `X_umap_rna` 與 `X_umap_protein`，不是 `X_umap` |
+
+### 使用者的決定
+
+| 問題 | 決定 |
+|---|---|
+| 沒有 cell type 名稱 | 先用 `rna_leiden` 開發；之後在 notebook 補上 cell type 名稱再重新輸出 `.h5ad` |
+| `X` 是原始 counts | 載入時自動正規化 |
+| 只在邊界檔中的細胞 | 可切換顯示，預設灰色（階段 3 實作） |
+
+### 完成事項
+
+- 只把 `feature_types == "Gene Expression"` 的 feature 當作基因：基因搜尋、基因上色與之後的 DE 都只用這 405 個基因；蛋白質與 control feature 不會出現（`var` 沒有 `feature_types` 時全部視為基因）。
+- 抽樣檢查表現矩陣是否全為非負整數；是的話只對基因做 scanpy `normalize_total` + `log1p`（預設參數，與 notebook 相同）。介面頂端顯示正規化方式與排除的 feature 數。
+- 與 notebook 輸出的 `rna_processed.h5ad` 中的 `lognorm` layer 比對 CD8A、EPCAM、PTPRC：**完全相同**（最大差異 0）。
+- 後端回傳 `default_embedding`（優先 `umap`，其次含 `rna` 的 umap，再其次任何 umap）；前端在有多個 embedding 時提供下拉選單切換（`umap_rna` / `umap_protein`）。
+- 新增 4 個測試，共 20 個測試通過。
+
+### 決策
+
+| 決策 | 理由 |
+|---|---|
+| 以 `feature_types` 篩選基因，而不是以 `p_` 前綴判斷蛋白質 | `feature_types` 是 10x 的標準欄位；名稱前綴是這份 notebook 自己的命名習慣，不可靠 |
+| 只在偵測到整數 counts 時才正規化 | 已 log-normalize 的資料不能再做一次；整數檢查足以區分兩者 |
+| 正規化只用基因，不含蛋白質與 control | 蛋白質是強度，不是 counts（正規化方式之後再決定）；control 不應計入每個細胞的總 counts |
+| 正規化直接呼叫 scanpy | 結果與 notebook 完全一致，DE 也會用同一份數值 |
+| 布林欄位（`is_tumor` 等）暫不列入著色選單 | 不在本次範圍；之後可視需要當作兩類的類別欄位 |
+
+### 待處理
+
+- 階段 2 畫面仍待使用者目視確認。
+- 下一步：階段 3（Xenium 細胞多邊形，含「只在邊界檔中的細胞」顯示開關）。

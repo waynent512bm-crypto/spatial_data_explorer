@@ -170,6 +170,7 @@
 - `.h5ad`：`/Volumes/Extreme SSD/2026_生物資訊學工作坊/Xenium_V1_Human_Kidney_FFPE_Protein_updated_outs/analysis_out/xenium_rcc_annotated.h5ad`（已 cluster、已 annotate）
 - 細胞邊界：同一個 Xenium output 資料夾中的 `cell_boundaries.parquet`
 - 上述為 macOS 路徑；在 Windows 上為外接硬碟的磁碟代號（例如 `E:\2026_生物資訊學工作坊\...`）。資料路徑由啟動參數或設定檔指定，不寫死在程式中。
+- 這台 Windows 電腦上的同一份資料：`C:\Users\User\Downloads\Xenium_合併分析\analysis_out\xenium_rcc_annotated.h5ad`，細胞邊界在 `C:\Users\User\Downloads\Xenium_合併分析\Xenium_V1_Human_Kidney_FFPE_Protein_updated_outs\cell_boundaries.parquet`。檢查結果見 [dev_log.md](dev_log.md)（2026-10-29「實際測試資料檢查」）。
 
 開始實作前要先確認的事：
 

@@ -13,6 +13,33 @@ import scipy.sparse as sp
 from .annotation import Detection, detect_celltype_column, is_categorical_like, is_unannotated
 
 GENE_SEARCH_LIMIT = 20
+GENE_FEATURE_TYPE = "Gene Expression"
+COUNT_CHECK_ROWS = 2000
+
+
+def gene_mask(var: pd.DataFrame) -> np.ndarray:
+    """Genes only: drops protein, control probe and codeword features when `feature_types` says so."""
+    if "feature_types" not in var.columns:
+        return np.ones(len(var), dtype=bool)
+    return (var["feature_types"].astype(str) == GENE_FEATURE_TYPE).to_numpy()
+
+
+def looks_like_counts(matrix) -> bool:
+    """True if a sample of rows holds only non-negative integers, i.e. raw counts, not log-normalized."""
+    rows = matrix[:COUNT_CHECK_ROWS]
+    values = rows.data if sp.issparse(rows) else np.asarray(rows).ravel()
+    values = values[values != 0]
+    return values.size > 0 and bool((values >= 0).all() and np.allclose(values, np.round(values)))
+
+
+def log_normalize(matrix):
+    """scanpy normalize_total + log1p, the same defaults as the analysis notebooks."""
+    import scanpy as sc
+
+    tmp = ad.AnnData(X=matrix.astype(np.float32) if sp.issparse(matrix) else np.asarray(matrix, np.float32))
+    sc.pp.normalize_total(tmp)
+    sc.pp.log1p(tmp)
+    return tmp.X
 
 
 @dataclass
@@ -38,10 +65,18 @@ class Dataset:
         self.source = source
         self.detection: Detection = detect_celltype_column(adata.obs)
 
-        matrix = adata.layers[layer] if layer else adata.X
+        mask = gene_mask(adata.var)
+        self.genes: list[str] = list(adata.var_names[mask])
+        self.n_excluded_features = int((~mask).sum())
+        matrix = (adata.layers[layer] if layer else adata.X)[:, mask]
+        if looks_like_counts(matrix):
+            matrix = log_normalize(matrix)
+            self.normalization = "normalize_total + log1p (auto: raw counts detected)"
+        else:
+            self.normalization = "as provided"
         # Column (per-gene) lookups dominate, so keep a CSC copy for sparse input.
         self._expr = matrix.tocsc() if sp.issparse(matrix) else np.asarray(matrix)
-        self._gene_index = {g: i for i, g in enumerate(adata.var_names)}
+        self._gene_index = {g: i for i, g in enumerate(self.genes)}
         self._obs_cache: dict[str, ObsColumn] = {}
 
     @classmethod
@@ -55,7 +90,7 @@ class Dataset:
 
     @property
     def n_genes(self) -> int:
-        return self.adata.n_vars
+        return len(self.genes)
 
     # -- embeddings ---------------------------------------------------------
 
@@ -66,6 +101,15 @@ class Dataset:
             if arr.ndim == 2 and arr.shape[1] >= 2:
                 names.append(key.removeprefix("X_"))
         return names
+
+    def default_embedding(self) -> str | None:
+        """Non-spatial embedding shown next to the tissue: plain umap, then an RNA umap, then any umap."""
+        names = [n for n in self.embedding_names() if n != "spatial"]
+        for pick in (lambda n: n == "umap", lambda n: "umap" in n and "rna" in n, lambda n: "umap" in n):
+            match = next((n for n in names if pick(n)), None)
+            if match:
+                return match
+        return names[0] if names else None
 
     def embedding(self, name: str) -> np.ndarray:
         for key in (name, f"X_{name}"):
@@ -128,7 +172,7 @@ class Dataset:
 
     def search_genes(self, query: str, limit: int = GENE_SEARCH_LIMIT) -> list[str]:
         q = query.strip().lower()
-        names = list(self.adata.var_names)
+        names = self.genes
         if not q:
             return names[:limit]
         prefix = [g for g in names if g.lower().startswith(q)]
@@ -154,7 +198,10 @@ class Dataset:
             "n_cells": self.n_cells,
             "n_genes": self.n_genes,
             "expression_layer": self.layer or "X",
+            "expression_normalization": self.normalization,
+            "n_excluded_features": self.n_excluded_features,
             "embeddings": self.embedding_names(),
+            "default_embedding": self.default_embedding(),
             "obs_columns": self.obs_columns(),
             "default_color_column": self.detection.column,
             "default_color_reason": self.detection.reason,

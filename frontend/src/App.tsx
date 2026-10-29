@@ -34,9 +34,10 @@ export default function App() {
 }
 
 function Explorer({ summary }: { summary: DatasetSummary }) {
-  const hasUmap = summary.embeddings.includes("umap");
+  const reductions = summary.embeddings.filter((e) => e !== "spatial");
+  const [reduction, setReduction] = useState<string | null>(summary.default_embedding);
   const spatial = useLoad(() => api.embedding("spatial"), []);
-  const umap = useLoad(hasUmap ? () => api.embedding("umap") : null, [hasUmap]);
+  const umap = useLoad(reduction ? () => api.embedding(reduction) : null, [reduction]);
 
   const [colorBy, setColorBy] = useState<string | null>(summary.default_color_column);
   const column = useLoad(colorBy ? () => api.obsColumn(colorBy) : null, [colorBy]);
@@ -79,7 +80,9 @@ function Explorer({ summary }: { summary: DatasetSummary }) {
         <h1>Spatial Data Explorer</h1>
         <span className="muted">
           {summary.platform} · {summary.n_cells.toLocaleString()} cells · {summary.n_genes.toLocaleString()} genes
+          {summary.n_excluded_features > 0 && ` (${summary.n_excluded_features} non-gene features excluded)`}
         </span>
+        <span className="muted small">Expression: {summary.expression_normalization}</span>
       </header>
 
       <div className="views">
@@ -89,17 +92,25 @@ function Explorer({ summary }: { summary: DatasetSummary }) {
         ) : (
           <section className="panel placeholder">{spatial.state === "error" ? spatial.message : "Loading spatial..."}</section>
         )}
-        {!hasUmap ? (
-          <section className="panel placeholder">No UMAP in this dataset (obsm["X_umap"])</section>
+        {!reduction ? (
+          <section className="panel placeholder">No UMAP or other embedding in this dataset (obsm)</section>
         ) : umap.state === "ready" ? (
-          <ScatterView id="umap" title="UMAP" positions={umap.value} colors={colors}
+          <ScatterView id="umap" title={reduction} positions={umap.value} colors={colors}
             flipY={false} radius={UMAP_RADIUS} />
         ) : (
-          <section className="panel placeholder">{umap.state === "error" ? umap.message : "Loading UMAP..."}</section>
+          <section className="panel placeholder">{umap.state === "error" ? umap.message : `Loading ${reduction}...`}</section>
         )}
       </div>
 
       <aside className="sidebar">
+        {reductions.length > 1 && (
+          <label className="field">
+            <span>Embedding</span>
+            <select value={reduction ?? ""} onChange={(e) => setReduction(e.target.value)}>
+              {reductions.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span>Color by</span>
           <select value={colorBy ?? ""} onChange={(e) => setColorBy(e.target.value || null)}>

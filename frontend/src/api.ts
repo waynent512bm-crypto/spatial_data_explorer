@@ -11,7 +11,10 @@ export interface DatasetSummary {
   n_cells: number;
   n_genes: number;
   expression_layer: string;
+  expression_normalization: string;
+  n_excluded_features: number;
   embeddings: string[];
+  default_embedding: string | null;
   obs_columns: ObsColumnInfo[];
   default_color_column: string | null;
   default_color_reason: string;

@@ -124,6 +124,7 @@ button:hover { background: var(--button-hover); }
   gap: 4px;
 }
 .field select { width: 100%; }
+.field + .field { margin-top: 10px; }
 
 .legend { margin-top: 12px; }
 .legend ul { list-style: none; margin: 8px 0 0; padding: 0; }
