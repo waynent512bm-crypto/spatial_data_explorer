@@ -59,3 +59,24 @@
 - **前端尚未實際執行**：這台電腦沒有安裝 Node.js，前端檔案已寫好但還沒 `npm install`、型別檢查與瀏覽器驗證；階段 0 的完成標準（網頁顯示「已連線到後端」）要等安裝 Node.js 後確認。
 - 外接 SSD 連接後，用 `xenium_rcc_annotated.h5ad` 確認 PLAN.md §8 的五個檢查項目。
 - 下一步：階段 2（Spatial + UMAP 雙視圖，deck.gl）。
+
+---
+
+## 2026-10-29 — 階段 0 驗證完成（前端）
+
+### 完成事項
+
+- 使用者安裝 Node.js v26.13.0、npm 11.20.0（Windows installer）。
+- `npm install`、`npm run typecheck`、`npm run build` 皆成功；`package-lock.json` 進 git。
+- 同時啟動後端（port 8000）與 Vite（port 5173），確認：頁面可載入、`/api/health`、`/api/dataset` 與二進位的 `/api/embedding/umap` 都能經由 Vite proxy 取得。
+
+### 決策
+
+| 決策 | 理由 |
+|---|---|
+| 不用 Docker 跑 Node.js，改裝原生 Windows installer | 這台電腦沒有 Docker；容器內的 Vite 要連到主機上的後端需額外網路設定，Windows 資料夾掛載進容器時 hot reload 也較慢或失效 |
+| 不核准 esbuild 的 postinstall script | npm 11 預設擋下未核准的 install script；esbuild 的平台 binary（`@esbuild/win32-x64`）已由 optional dependency 安裝，`vite build` 正常，不需要額外核准 |
+
+### 待處理
+
+- 瀏覽器畫面由使用者目視確認（開發環境沒有瀏覽器可截圖）。
