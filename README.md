@@ -17,9 +17,12 @@
 Windows（PowerShell）：
 
 ```powershell
-.\scripts\dev.ps1                                              # 示範資料
-.\scripts\dev.ps1 -H5ad E:\path\to\annotated.h5ad -Platform xenium
+cd C:\Users\User\2026_生物資訊學工作坊\spatial_data_explorer
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1     # 示範資料
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -H5ad E:\path\to\annotated.h5ad -Platform xenium
 ```
+
+按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 停止。
 
 macOS / Linux：
 
